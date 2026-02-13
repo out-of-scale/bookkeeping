@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#7c4dff">
+  <meta name="description" content="计件工资记账应用 - 离线使用，本地存储">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>计件工资记账</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="./icons/icon-192.svg">
+  <link rel="apple-touch-icon" href="./icons/icon-192.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+
+<body>
+
+  <!-- 顶部标题栏 -->
+  <header class="app-header">
+    <h1>📋 计件工资记账</h1>
+    <div class="project-selector">
+      <select id="global-project" onchange="onGlobalProjectChange()">
+        <option value="">全部项目</option>
+      </select>
+    </div>
+  </header>
+
+  <!-- ========== Tab 1: 统计报表 ========== -->
+  <div class="content">
+    <div id="tab-stats" class="tab-content active">
+      <!-- 日期范围选择 -->
+      <div class="card">
+        <div class="date-range">
+          <label>从</label>
+          <input type="date" id="stat-start" onchange="refreshStats()">
+          <label>至</label>
+          <input type="date" id="stat-end" onchange="refreshStats()">
+        </div>
+      </div>
+
+      <!-- 总览卡片 -->
+      <div class="summary-cards">
+        <div class="summary-card">
+          <div class="value" id="summary-amount">¥0.00</div>
+          <div class="label">总金额</div>
+        </div>
+        <div class="summary-card">
+          <div class="value" id="summary-count">0</div>
+          <div class="label">工人数</div>
+        </div>
+        <div class="summary-card">
+          <div class="value" id="summary-qty">0</div>
+          <div class="label">总数量</div>
+        </div>
+        <div class="summary-card">
+          <div class="value" id="summary-items">0</div>
+          <div class="label">工作项</div>
+        </div>
+      </div>
+
+      <!-- 按工人统计 -->
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
+          </svg>
+          按工人统计
+        </div>
+        <table class="stat-table">
+          <thead>
+            <tr>
+              <th>工人</th>
+              <th>数量</th>
+              <th>金额</th>
+            </tr>
+          </thead>
+          <tbody id="worker-stats-body">
+            <tr>
+              <td colspan="3" class="stat-empty">暂无数据</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 按工作内容统计 -->
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+            <line x1="8" y1="21" x2="16" y2="21" />
+            <line x1="12" y1="17" x2="12" y2="21" />
+          </svg>
+          按工作内容统计
+        </div>
+        <table class="stat-table">
+          <thead>
+            <tr>
+              <th>内容</th>
+              <th>数量</th>
+              <th>金额</th>
+            </tr>
+          </thead>
+          <tbody id="content-stats-body">
+            <tr>
+              <td colspan="3" class="stat-empty">暂无数据</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ========== Tab 2: 历史记录 ========== -->
+    <div id="tab-history" class="tab-content">
+      <!-- 筛选条件 -->
+      <div class="card">
+        <div class="filter-bar">
+          <select id="filter-project" onchange="refreshHistory()">
+            <option value="">全部项目</option>
+          </select>
+          <select id="filter-worker" onchange="refreshHistory()">
+            <option value="">全部工人</option>
+          </select>
+        </div>
+        <div class="filter-bar">
+          <input type="date" id="filter-start" onchange="refreshHistory()">
+          <input type="date" id="filter-end" onchange="refreshHistory()">
+        </div>
+        <div class="filter-bar">
+          <input type="text" id="filter-content" placeholder="搜索工作内容" oninput="refreshHistory()">
+        </div>
+      </div>
+      <!-- 记录列表 -->
+      <div id="record-list"></div>
+    </div>
+
+    <!-- ========== Tab 3: 设置 ========== -->
+    <div id="tab-settings" class="tab-content">
+      <!-- 项目管理 -->
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
+          </svg>
+          项目管理
+        </div>
+        <div id="project-list"></div>
+        <div class="add-worker-row">
+          <input type="text" id="new-project-name" placeholder="输入项目名称" onkeydown="if(event.key==='Enter')addProject()">
+          <button class="btn btn-primary btn-small" onclick="addProject()">添加</button>
+        </div>
+      </div>
+
+      <!-- 工作内容管理 -->
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
+          </svg>
+          工作内容管理
+        </div>
+        <div class="form-group" style="margin-bottom:12px;">
+          <select id="wi-project" onchange="onWiProjectChange()">
+            <option value="">请选择项目</option>
+          </select>
+        </div>
+        <div id="wi-list">
+          <div class="stat-empty">请先选择项目</div>
+        </div>
+        <div class="add-worker-row" style="margin-top:12px;">
+          <input type="text" id="wi-content-name" placeholder="工作内容名称" style="flex:2;">
+          <input type="number" id="wi-unit-price" inputmode="decimal" step="any" min="0" placeholder="单价"
+            style="flex:1;">
+          <button class="btn btn-primary btn-small" onclick="addWorkItem()">添加</button>
+        </div>
+      </div>
+
+      <!-- 工人管理 -->
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+            <circle cx="8.5" cy="7" r="4" />
+            <line x1="20" y1="8" x2="20" y2="14" />
+            <line x1="23" y1="11" x2="17" y2="11" />
+          </svg>
+          工人管理
+        </div>
+        <div id="worker-list"></div>
+        <div class="add-worker-row">
+          <input type="text" id="new-worker-name" placeholder="输入工人姓名" onkeydown="if(event.key==='Enter')addWorker()">
+          <button class="btn btn-primary btn-small" onclick="addWorker()">添加</button>
+        </div>
+      </div>
+
+      <!-- 数据导出 -->
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          数据导出
+        </div>
+        <p style="font-size:13px;color:var(--text-secondary);margin-bottom:14px;">
+          导出所有记录为 CSV 文件，可用 Excel 打开。<br>
+          <span style="font-size:12px;">如选择了项目，仅导出该项目的记录</span>
+        </p>
+        <button class="btn btn-outline" onclick="exportData()">
+          📥 导出 CSV 文件
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 浮动添加按钮 -->
+  <button class="fab" onclick="openAddModal()" id="fab-btn">＋</button>
+
+  <!-- ========== 记账弹窗 ========== -->
+  <div class="modal-overlay" id="record-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modal-title">新增记账</h2>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+      <form id="record-form" onsubmit="event.preventDefault();saveRecord();">
+        <input type="hidden" id="record-id">
+        <div class="form-group">
+          <label>所属项目</label>
+          <select id="record-project" required onchange="onRecordProjectChange()">
+            <option value="">请选择项目</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>日期</label>
+          <input type="date" id="record-date" required>
+        </div>
+        <div class="form-group">
+          <label>工人姓名</label>
+          <select id="record-worker" required>
+            <option value="">请选择工人</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>工作内容</label>
+          <select id="record-content" required onchange="onRecordContentChange()">
+            <option value="">请先选择项目</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>数量</label>
+          <input type="number" id="record-qty" inputmode="decimal" step="any" min="0" placeholder="0" required
+            oninput="calcTotal()">
+        </div>
+        <div class="form-group">
+          <label>单价（元）</label>
+          <input type="number" id="record-price" inputmode="decimal" step="any" min="0" placeholder="0.00" required
+            oninput="calcTotal()">
+        </div>
+        <div class="form-group">
+          <label>总价</label>
+          <div class="total-display" id="calc-total">¥0.00</div>
+        </div>
+        <button type="submit" class="btn btn-primary" id="save-btn">💾 保存</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast 提示 -->
+  <div class="toast" id="toast"></div>
+
+  <!-- 确认弹窗 -->
+  <div class="confirm-overlay" id="confirm-overlay">
+    <div class="confirm-box">
+      <p id="confirm-msg">确定要删除吗？</p>
+      <div class="btn-row">
+        <button class="btn btn-outline btn-small" onclick="closeConfirm()">取消</button>
+        <button class="btn btn-danger btn-small" id="confirm-yes" onclick="executeDelete()">确定删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部导航栏 -->
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-tab="stats" onclick="switchTab('stats')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="18" y1="20" x2="18" y2="10" />
+        <line x1="12" y1="20" x2="12" y2="4" />
+        <line x1="6" y1="20" x2="6" y2="14" />
+      </svg>
+      统计
+    </button>
+    <button class="nav-item" data-tab="history" onclick="switchTab('history')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10" />
+        <polyline points="12 6 12 12 16 14" />
+      </svg>
+      历史
+    </button>
+    <button class="nav-item" data-tab="settings" onclick="switchTab('settings')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="3" />
+        <path
+          d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
+      </svg>
+      设置
+    </button>
+  </nav>
+
+  <!-- 加载脚本 -->
+  <script src="./db.js"></script>
+  <script src="./app.js"></script>
+
+</body>
+
+</html>
