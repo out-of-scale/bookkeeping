@@ -224,6 +224,31 @@ class BookkeepingDB {
         return Object.values(stats).sort((a, b) => b.totalAmount - a.totalAmount);
     }
 
+    // 按工作内容×工人交叉统计
+    async getStatsByContentWorker(startDate, endDate, projectName) {
+        const filters = { startDate, endDate };
+        if (projectName) filters.projectName = projectName;
+        const records = await this.getFilteredRecords(filters);
+        const stats = {};
+        records.forEach(r => {
+            if (!stats[r.workContent]) {
+                stats[r.workContent] = { content: r.workContent, workers: {}, totalQty: 0, totalAmount: 0 };
+            }
+            const group = stats[r.workContent];
+            group.totalQty += r.quantity;
+            group.totalAmount += r.totalPrice;
+            if (!group.workers[r.workerName]) {
+                group.workers[r.workerName] = { name: r.workerName, qty: 0, amount: 0 };
+            }
+            group.workers[r.workerName].qty += r.quantity;
+            group.workers[r.workerName].amount += r.totalPrice;
+        });
+        return Object.values(stats).sort((a, b) => b.totalAmount - a.totalAmount).map(g => ({
+            ...g,
+            workers: Object.values(g.workers).sort((a, b) => b.amount - a.amount)
+        }));
+    }
+
     async exportCSV(filters = {}) {
         const records = await this.getFilteredRecords(filters);
         const header = '项目,日期,工人姓名,工作内容,数量,单价,总价\n';
@@ -235,7 +260,7 @@ class BookkeepingDB {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `工资记录_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.download = `工资记录_${filters.projectName || '全部'}_${new Date().toISOString().slice(0, 10)}.csv`;
         a.click();
         URL.revokeObjectURL(url);
     }

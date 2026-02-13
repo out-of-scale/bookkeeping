@@ -1,14 +1,17 @@
 // Service Worker - 计件工资记账应用
-// 实现离线缓存，让应用可以在没有网络的情况下正常使用
+// 网络优先策略：有网用最新版，断网用缓存
 
-const CACHE_NAME = 'bookkeeping-v1';
+const CACHE_NAME = 'bookkeeping-v2';
 const urlsToCache = [
   './',
   './index.html',
+  './styles.css',
+  './app.js',
+  './db.js',
   './manifest.json'
 ];
 
-// 安装 Service Worker 时缓存所有静态资源
+// 安装时缓存
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
@@ -17,23 +20,28 @@ self.addEventListener('install', event => {
   self.skipWaiting();
 });
 
-// 激活时清除旧版本缓存
+// 激活时清除旧缓存
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
       Promise.all(
         keys.filter(key => key !== CACHE_NAME)
-            .map(key => caches.delete(key))
+          .map(key => caches.delete(key))
       )
     )
   );
   self.clients.claim();
 });
 
-// 拦截网络请求，优先使用缓存
+// 网络优先：先尝试网络，失败则用缓存
 self.addEventListener('fetch', event => {
   event.respondWith(
-    caches.match(event.request)
-      .then(response => response || fetch(event.request))
+    fetch(event.request)
+      .then(response => {
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });

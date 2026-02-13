@@ -30,7 +30,7 @@ function switchTab(tabName) {
 
     if (tabName === 'record') refreshRecordPage();
     else if (tabName === 'stats') { refreshStats(); refreshHistory(); loadFilterSelects(); }
-    else if (tabName === 'settings') { refreshProjects(); refreshWorkers(); loadWiProjectSelect(); }
+    else if (tabName === 'settings') { refreshProjects(); refreshWorkers(); loadWiProjectSelect(); loadExportProjectSelect(); }
 }
 
 // ========================================
@@ -264,6 +264,34 @@ async function refreshStats() {
     cb.innerHTML = byContent.length === 0
         ? '<tr><td colspan="3" class="stat-empty">暂无数据</td></tr>'
         : byContent.map(c => `<tr><td>${c.content}</td><td>${c.totalQty.toFixed(1)}</td><td style="text-align:right;font-weight:600;color:var(--success);">${formatMoney(c.totalAmount)}</td></tr>`).join('');
+
+    // 交叉统计：工作内容 × 工人
+    try {
+        const byCW = await db.getStatsByContentWorker(startDate, endDate, projectName);
+        console.log('交叉统计数据:', JSON.stringify(byCW));
+        const cwDiv = document.getElementById('content-worker-stats');
+        if (!byCW || byCW.length === 0) {
+            cwDiv.innerHTML = '<div class="stat-empty">暂无数据</div>';
+        } else {
+            cwDiv.innerHTML = byCW.map(g => `
+                <div style="margin-bottom:16px;">
+                    <div style="font-size:17px;font-weight:600;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
+                        <span>${g.content}</span>
+                        <span style="color:var(--success);font-size:15px;">共${g.totalQty.toFixed(1)}件 ${formatMoney(g.totalAmount)}</span>
+                    </div>
+                    ${g.workers.map(w => `
+                        <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--bg-input);border-radius:8px;margin-bottom:4px;font-size:16px;">
+                            <span>${w.name}</span>
+                            <span><span style="color:var(--text-secondary);">${w.qty.toFixed(1)}件</span> &nbsp; <span style="color:var(--success);font-weight:600;">${formatMoney(w.amount)}</span></span>
+                        </div>
+                    `).join('')}
+                </div>
+            `).join('');
+        }
+    } catch (err) {
+        console.error('交叉统计出错:', err);
+        document.getElementById('content-worker-stats').innerHTML = '<div class="stat-empty">加载出错</div>';
+    }
 }
 
 async function refreshHistory() {
@@ -531,12 +559,107 @@ async function deleteWorker(id, name) {
     };
 }
 
+// 清除缓存
+async function clearCache() {
+    try {
+        // 注销 Service Worker（仅 HTTPS 下可用）
+        if ('serviceWorker' in navigator) {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            for (const reg of regs) { await reg.unregister(); }
+        }
+        // 清除所有缓存
+        if ('caches' in window) {
+            const keys = await caches.keys();
+            for (const key of keys) { await caches.delete(key); }
+        }
+        showToast('缓存已清除，正在刷新...');
+        setTimeout(() => location.reload(true), 1000);
+    } catch (err) {
+        showToast('清除失败: ' + err.message);
+    }
+}
+
 // 数据导出
+// 加载导出项目选择器
+async function loadExportProjectSelect() {
+    const projects = await db.getAllProjects();
+    const sel = document.getElementById('export-project');
+    const v = sel.value;
+    sel.innerHTML = '<option value="">全部项目</option>' +
+        projects.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
+    sel.value = v;
+}
+
+// 数据导出（按项目）
 async function exportData() {
-    const records = await db.getAllRecords();
+    const projectName = document.getElementById('export-project').value;
+    const filters = {};
+    if (projectName) filters.projectName = projectName;
+
+    const records = await db.getFilteredRecords(filters);
     if (records.length === 0) { showToast('暂无数据'); return; }
-    await db.exportCSV({});
-    showToast('CSV 已下载 ✅');
+
+    await db.exportCSV(filters);
+    showToast(`已导出 ${records.length} 条记录 ✅`);
+}
+
+// CSV 导入
+async function importCSV(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const text = await file.text();
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+
+    if (lines.length < 2) {
+        showToast('CSV 文件为空或格式不对');
+        event.target.value = '';
+        return;
+    }
+
+    // 解析标题行确认格式
+    const header = lines[0].replace(/^\uFEFF/, ''); // 去掉 BOM
+    const expectedHeaders = ['项目', '日期', '工人姓名', '工作内容', '数量', '单价', '总价'];
+    const headerCols = header.split(',');
+
+    // 简单校验列数
+    if (headerCols.length < 6) {
+        showToast('CSV 格式不正确，请使用导出的文件');
+        event.target.value = '';
+        return;
+    }
+
+    let imported = 0;
+    let skipped = 0;
+
+    for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(',');
+        if (cols.length < 6) { skipped++; continue; }
+
+        const projectName = cols[0].trim();
+        const date = cols[1].trim();
+        const workerName = cols[2].trim();
+        const workContent = cols[3].trim();
+        const quantity = cols[4].trim();
+        const unitPrice = cols[5].trim();
+
+        // 基本校验
+        if (!date || !workerName || !workContent || !quantity || !unitPrice) {
+            skipped++;
+            continue;
+        }
+
+        try {
+            await db.addRecord({ projectName, date, workerName, workContent, quantity, unitPrice });
+            imported++;
+        } catch (err) {
+            skipped++;
+        }
+    }
+
+    event.target.value = ''; // 重置文件选择
+    showToast(`导入完成：成功 ${imported} 条${skipped > 0 ? `，跳过 ${skipped} 条` : ''}`);
+    refreshRecordPage();
 }
 
 // ========================================
