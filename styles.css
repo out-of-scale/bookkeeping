@@ -49,7 +49,7 @@ body {
 }
 
 .app-header h1 {
-  font-size: 20px;
+  font-size: 24px;
   font-weight: 700;
   background: var(--accent-gradient);
   -webkit-background-clip: text;
@@ -79,7 +79,7 @@ body {
   align-items: center;
   padding: 10px 0 8px;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 14px;
   transition: var(--transition);
   cursor: pointer;
   border: none;
@@ -91,8 +91,8 @@ body {
 }
 
 .nav-item svg {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   margin-bottom: 3px;
 }
 
@@ -142,7 +142,7 @@ body {
 }
 
 .card-title {
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 600;
   color: var(--accent-light);
   margin-bottom: 14px;
@@ -152,8 +152,8 @@ body {
 }
 
 .card-title svg {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
 }
 
 /* ========== 日期选择器行 ========== */
@@ -166,7 +166,7 @@ body {
 }
 
 .date-range label {
-  font-size: 13px;
+  font-size: 16px;
   color: var(--text-secondary);
 }
 
@@ -176,7 +176,7 @@ body {
   border-radius: 8px;
   color: var(--text-primary);
   padding: 8px 12px;
-  font-size: 14px;
+  font-size: 16px;
   flex: 1;
   min-width: 120px;
 }
@@ -196,7 +196,7 @@ body {
 .stat-table th {
   text-align: left;
   padding: 10px 8px;
-  font-size: 12px;
+  font-size: 15px;
   color: var(--text-secondary);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   font-weight: 500;
@@ -204,7 +204,7 @@ body {
 
 .stat-table td {
   padding: 12px 8px;
-  font-size: 14px;
+  font-size: 17px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 
@@ -222,7 +222,7 @@ body {
   text-align: center;
   padding: 30px;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 17px;
 }
 
 /* ========== 浮动操作按钮 FAB ========== */
@@ -231,13 +231,13 @@ body {
   bottom: 80px;
   right: 20px;
   z-index: 90;
-  width: 58px;
-  height: 58px;
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
   background: var(--accent-gradient);
   border: none;
   color: #fff;
-  font-size: 30px;
+  font-size: 34px;
   cursor: pointer;
   box-shadow: 0 6px 20px rgba(124, 77, 255, 0.4);
   transition: var(--transition);
@@ -301,7 +301,7 @@ body {
 }
 
 .modal-header h2 {
-  font-size: 18px;
+  font-size: 22px;
   font-weight: 700;
   background: var(--accent-gradient);
   -webkit-background-clip: text;
@@ -316,7 +316,7 @@ body {
   background: rgba(255, 255, 255, 0.06);
   border: none;
   color: var(--text-secondary);
-  font-size: 20px;
+  font-size: 24px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -336,7 +336,7 @@ body {
 
 .form-group label {
   display: block;
-  font-size: 13px;
+  font-size: 16px;
   color: var(--text-secondary);
   margin-bottom: 6px;
   font-weight: 500;
@@ -351,7 +351,7 @@ body {
   border-radius: 10px;
   color: var(--text-primary);
   padding: 12px 14px;
-  font-size: 15px;
+  font-size: 17px;
   transition: var(--transition);
   -webkit-appearance: none;
 }
@@ -378,7 +378,7 @@ body {
   border-radius: 10px;
   padding: 14px;
   text-align: center;
-  font-size: 22px;
+  font-size: 26px;
   font-weight: 700;
   color: var(--success);
   letter-spacing: 1px;
@@ -389,7 +389,7 @@ body {
   padding: 13px 24px;
   border-radius: 10px;
   border: none;
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 600;
   cursor: pointer;
   transition: var(--transition);
@@ -453,7 +453,7 @@ body {
 
 .btn-small {
   padding: 8px 16px;
-  font-size: 13px;
+  font-size: 15px;
   border-radius: 8px;
   width: auto;
 }
@@ -481,12 +481,12 @@ body {
 }
 
 .record-date {
-  font-size: 12px;
+  font-size: 15px;
   color: var(--text-secondary);
 }
 
 .record-worker {
-  font-size: 13px;
+  font-size: 16px;
   color: var(--accent-light);
   background: rgba(124, 77, 255, 0.1);
   padding: 3px 10px;
@@ -494,12 +494,12 @@ body {
 }
 
 .record-content {
-  font-size: 14px;
+  font-size: 17px;
   margin-bottom: 6px;
 }
 
 .record-calc {
-  font-size: 13px;
+  font-size: 16px;
   color: var(--text-secondary);
   display: flex;
   justify-content: space-between;
@@ -507,7 +507,7 @@ body {
 }
 
 .record-total {
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 700;
   color: var(--success);
 }
@@ -535,7 +535,7 @@ body {
   border-radius: 8px;
   color: var(--text-primary);
   padding: 8px 12px;
-  font-size: 13px;
+  font-size: 16px;
   flex: 1;
   min-width: 100px;
 }
@@ -556,7 +556,7 @@ body {
 }
 
 .worker-name {
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 500;
 }
 
@@ -577,8 +577,8 @@ body {
 }
 
 .worker-delete svg {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
 }
 
 .add-worker-row {
@@ -613,14 +613,14 @@ body {
 }
 
 .summary-card .value {
-  font-size: 24px;
+  font-size: 28px;
   font-weight: 700;
   color: var(--success);
   margin-bottom: 4px;
 }
 
 .summary-card .label {
-  font-size: 12px;
+  font-size: 15px;
   color: var(--text-secondary);
 }
 
@@ -634,7 +634,7 @@ body {
   color: var(--text-primary);
   padding: 12px 24px;
   border-radius: 10px;
-  font-size: 14px;
+  font-size: 17px;
   z-index: 300;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
   border: 1px solid rgba(124, 77, 255, 0.2);
@@ -684,7 +684,7 @@ body {
 }
 
 .confirm-box p {
-  font-size: 15px;
+  font-size: 18px;
   margin-bottom: 20px;
   line-height: 1.5;
 }
@@ -700,7 +700,7 @@ body {
   border-radius: 8px;
   color: var(--text-primary);
   padding: 6px 12px;
-  font-size: 13px;
+  font-size: 16px;
   width: 100%;
   -webkit-appearance: none;
   cursor: pointer;
@@ -713,7 +713,7 @@ body {
 
 /* ========== 项目标签（历史记录中） ========== */
 .record-project-tag {
-  font-size: 11px;
+  font-size: 14px;
   color: var(--warning);
   background: rgba(255, 215, 64, 0.1);
   padding: 2px 8px;
