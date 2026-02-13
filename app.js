@@ -1,63 +1,24 @@
-// ========== 计件工资记账 App 主逻辑 ==========
+// ========== 计件工资记账 App — 主逻辑 ==========
 
 // ---- 全局状态 ----
-let currentProject = ''; // 当前选中的项目名（空 = 全部项目）
-let isSaving = false;    // 防重复提交
+let currentProject = localStorage.getItem('lastProject') || ''; // 记住上次选的项目
+let lastWorker = localStorage.getItem('lastWorker') || '';       // 记住上次选的工人
 let pendingDeleteId = null;
-let currentWorkItems = []; // 当前项目的工作内容列表（缓存）
+let isSaving = false;
 
 // ---- 工具函数 ----
-
-function today() {
-    return new Date().toISOString().slice(0, 10);
-}
-
+function today() { return new Date().toISOString().slice(0, 10); }
 function monthStart() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 }
-
-function formatMoney(n) {
-    return '¥' + n.toFixed(2);
-}
+function formatMoney(n) { return '¥' + n.toFixed(2); }
 
 function showToast(msg, duration = 2000) {
     const toast = document.getElementById('toast');
     toast.textContent = msg;
     toast.classList.add('show');
     setTimeout(() => toast.classList.remove('show'), duration);
-}
-
-// ---- 项目选择器 ----
-async function loadProjectSelectors() {
-    const projects = await db.getAllProjects();
-    const allOptions = '<option value="">全部项目</option>' +
-        projects.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
-    const pickOptions = '<option value="">请选择项目</option>' +
-        projects.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
-
-    ['global-project', 'filter-project'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) { const v = el.value; el.innerHTML = allOptions; el.value = v; }
-    });
-
-    const rp = document.getElementById('record-project');
-    if (rp) { const v = rp.value; rp.innerHTML = pickOptions; rp.value = v; }
-
-    // 设置页的工作内容管理项目选择
-    const wip = document.getElementById('wi-project');
-    if (wip) { const v = wip.value; wip.innerHTML = pickOptions; wip.value = v; }
-}
-
-function onGlobalProjectChange() {
-    currentProject = document.getElementById('global-project').value;
-    const filterProject = document.getElementById('filter-project');
-    if (filterProject) filterProject.value = currentProject;
-    const activeTab = document.querySelector('.tab-content.active');
-    if (activeTab) {
-        if (activeTab.id === 'tab-stats') refreshStats();
-        else if (activeTab.id === 'tab-history') refreshHistory();
-    }
 }
 
 // ---- 页面切换 ----
@@ -67,16 +28,222 @@ function switchTab(tabName) {
     document.getElementById('tab-' + tabName).classList.add('active');
     document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
 
-    if (tabName === 'stats') refreshStats();
-    else if (tabName === 'history') refreshHistory();
-    else if (tabName === 'settings') { refreshWorkers(); refreshProjects(); loadProjectSelectors(); }
+    if (tabName === 'record') refreshRecordPage();
+    else if (tabName === 'stats') { refreshStats(); refreshHistory(); loadFilterSelects(); }
+    else if (tabName === 'settings') { refreshProjects(); refreshWorkers(); loadWiProjectSelect(); }
 }
 
-// ---- 统计页 ----
+// ========================================
+//  记账页（首页）
+// ========================================
+
+async function refreshRecordPage() {
+    const projects = await db.getAllProjects();
+    const bar = document.getElementById('project-bar');
+    const emptyHint = document.getElementById('empty-hint');
+    const workCards = document.getElementById('work-cards');
+
+    // 渲染项目切换栏
+    bar.innerHTML = '<button class="project-chip ' + (!currentProject ? 'active' : '') +
+        '" data-project="" onclick="selectProject(this)">全部</button>' +
+        projects.map(p => `<button class="project-chip ${currentProject === p.name ? 'active' : ''}"
+      data-project="${p.name}" onclick="selectProject(this)">${p.name}</button>`).join('');
+
+    // 加载工作内容
+    let items;
+    if (currentProject) {
+        items = await db.getWorkItemsByProject(currentProject);
+    } else {
+        items = await db.getAllWorkItems();
+    }
+
+    if (projects.length === 0) {
+        emptyHint.style.display = 'block';
+        workCards.innerHTML = '';
+    } else if (items.length === 0) {
+        emptyHint.style.display = 'none';
+        workCards.innerHTML = `<div class="stat-empty" style="grid-column:1/-1;">
+      ${currentProject ? '该项目暂无工作内容<br>请到「管理」页面添加' : '请选择一个项目'}
+    </div>`;
+    } else {
+        emptyHint.style.display = 'none';
+        workCards.innerHTML = items.map(i => `
+      <div class="work-card" onclick="openQuickRecord('${i.projectName}', '${i.contentName}', ${i.unitPrice})">
+        ${!currentProject ? `<div class="work-card-project">${i.projectName}</div>` : ''}
+        <div class="work-card-name">${i.contentName}</div>
+        <div class="work-card-price">¥${i.unitPrice.toFixed(2)}/件</div>
+      </div>
+    `).join('');
+    }
+
+    // 今日记录摘要
+    await refreshTodaySummary();
+}
+
+function selectProject(el) {
+    currentProject = el.dataset.project;
+    localStorage.setItem('lastProject', currentProject);
+    document.querySelectorAll('.project-chip').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+    refreshRecordPage();
+}
+
+async function refreshTodaySummary() {
+    const records = await db.getFilteredRecords({
+        startDate: today(),
+        endDate: today(),
+        projectName: currentProject || undefined
+    });
+
+    const container = document.getElementById('today-summary');
+    const list = document.getElementById('today-list');
+
+    if (records.length === 0) {
+        container.style.display = 'none';
+        return;
+    }
+
+    container.style.display = 'block';
+    const total = records.reduce((s, r) => s + r.totalPrice, 0);
+
+    list.innerHTML = records.map(r => `
+    <div class="today-item">
+      <div class="today-item-left">
+        <span class="today-item-worker">${r.workerName} — ${r.workContent}</span>
+        <span class="today-item-content">${r.quantity} × ¥${r.unitPrice.toFixed(2)}</span>
+      </div>
+      <span class="today-item-amount">${formatMoney(r.totalPrice)}</span>
+    </div>
+  `).join('') + `
+    <div class="today-item" style="background:rgba(105,240,174,0.06);border-color:rgba(105,240,174,0.15);">
+      <span style="font-size:17px;font-weight:600;">今日合计</span>
+      <span class="today-item-amount">${formatMoney(total)}</span>
+    </div>
+  `;
+}
+
+// ========================================
+//  快速记账弹窗
+// ========================================
+
+async function openQuickRecord(projectName, contentName, unitPrice) {
+    document.getElementById('modal-title').textContent = '记账';
+    document.getElementById('record-id').value = '';
+    document.getElementById('record-project').value = projectName;
+    document.getElementById('record-content').value = contentName;
+    document.getElementById('record-price-hidden').value = unitPrice;
+    document.getElementById('record-date').value = today();
+    document.getElementById('record-qty').value = '';
+    document.getElementById('calc-total').textContent = '¥0.00';
+
+    // 显示选中的工作内容
+    document.getElementById('work-label').textContent = contentName;
+    document.getElementById('work-price').textContent = `¥${unitPrice.toFixed(2)}/件`;
+
+    // 加载工人按钮
+    const workers = await db.getAllWorkers();
+    const btns = document.getElementById('worker-buttons');
+
+    if (workers.length === 0) {
+        btns.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--text-secondary);padding:12px;">请先到「管理」添加工人</div>';
+    } else {
+        btns.innerHTML = workers.map(w =>
+            `<button type="button" class="worker-btn ${w.name === lastWorker ? 'active' : ''}"
+        onclick="selectWorker(this, '${w.name}')">${w.name}</button>`
+        ).join('');
+    }
+
+    document.getElementById('record-modal').classList.add('show');
+
+    // 自动聚焦到数量输入框
+    setTimeout(() => document.getElementById('record-qty').focus(), 350);
+}
+
+function selectWorker(btn, name) {
+    document.querySelectorAll('.worker-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    lastWorker = name;
+    localStorage.setItem('lastWorker', name);
+}
+
+function closeModal() {
+    document.getElementById('record-modal').classList.remove('show');
+}
+
+function calcTotal() {
+    const qty = parseFloat(document.getElementById('record-qty').value) || 0;
+    const price = parseFloat(document.getElementById('record-price-hidden').value) || 0;
+    document.getElementById('calc-total').textContent = formatMoney(qty * price);
+}
+
+async function saveRecord() {
+    if (isSaving) return;
+
+    const id = document.getElementById('record-id').value;
+    const projectName = document.getElementById('record-project').value;
+    const date = document.getElementById('record-date').value;
+    const workContent = document.getElementById('record-content').value;
+    const unitPrice = document.getElementById('record-price-hidden').value;
+    const quantity = document.getElementById('record-qty').value;
+
+    // 获取选中的工人
+    const activeWorkerBtn = document.querySelector('.worker-btn.active');
+    const workerName = activeWorkerBtn ? activeWorkerBtn.textContent : '';
+
+    if (!workerName) { showToast('请选择工人'); return; }
+    if (!quantity || parseFloat(quantity) <= 0) { showToast('请输入数量'); return; }
+
+    isSaving = true;
+    document.getElementById('save-btn').disabled = true;
+
+    try {
+        const data = { projectName, date, workerName, workContent, quantity, unitPrice };
+
+        if (id) {
+            const records = await db.getAllRecords();
+            const existing = records.find(r => r.id === parseInt(id));
+            await db.updateRecord({ ...existing, ...data });
+            showToast('已更新 ✅');
+        } else {
+            await db.addRecord(data);
+            showToast('已保存 ✅');
+        }
+
+        closeModal();
+        refreshRecordPage();
+    } catch (err) {
+        showToast('保存失败: ' + err.message);
+    } finally {
+        isSaving = false;
+        document.getElementById('save-btn').disabled = false;
+    }
+}
+
+// ========================================
+//  统计页
+// ========================================
+
+async function loadFilterSelects() {
+    const projects = await db.getAllProjects();
+    const workers = await db.getAllWorkers();
+
+    const fp = document.getElementById('filter-project');
+    const v1 = fp.value;
+    fp.innerHTML = '<option value="">全部项目</option>' +
+        projects.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
+    fp.value = v1;
+
+    const fw = document.getElementById('filter-worker');
+    const v2 = fw.value;
+    fw.innerHTML = '<option value="">全部工人</option>' +
+        workers.map(w => `<option value="${w.name}">${w.name}</option>`).join('');
+    fw.value = v2;
+}
+
 async function refreshStats() {
     const startDate = document.getElementById('stat-start').value;
     const endDate = document.getElementById('stat-end').value;
-    const projectName = currentProject;
+    const projectName = document.getElementById('filter-project').value;
 
     const byWorker = await db.getStatsByWorker(startDate, endDate, projectName);
     const byContent = await db.getStatsByContent(startDate, endDate, projectName);
@@ -88,25 +255,23 @@ async function refreshStats() {
     document.getElementById('summary-qty').textContent = totalQty.toFixed(1);
     document.getElementById('summary-items').textContent = byContent.length;
 
-    const workerBody = document.getElementById('worker-stats-body');
-    workerBody.innerHTML = byWorker.length === 0
+    const wb = document.getElementById('worker-stats-body');
+    wb.innerHTML = byWorker.length === 0
         ? '<tr><td colspan="3" class="stat-empty">暂无数据</td></tr>'
-        : byWorker.map(w => `<tr><td>${w.name}</td><td>${w.totalQty.toFixed(1)}</td><td class="amount">${formatMoney(w.totalAmount)}</td></tr>`).join('');
+        : byWorker.map(w => `<tr><td>${w.name}</td><td>${w.totalQty.toFixed(1)}</td><td style="text-align:right;font-weight:600;color:var(--success);">${formatMoney(w.totalAmount)}</td></tr>`).join('');
 
-    const contentBody = document.getElementById('content-stats-body');
-    contentBody.innerHTML = byContent.length === 0
+    const cb = document.getElementById('content-stats-body');
+    cb.innerHTML = byContent.length === 0
         ? '<tr><td colspan="3" class="stat-empty">暂无数据</td></tr>'
-        : byContent.map(c => `<tr><td>${c.content}</td><td>${c.totalQty.toFixed(1)}</td><td class="amount">${formatMoney(c.totalAmount)}</td></tr>`).join('');
+        : byContent.map(c => `<tr><td>${c.content}</td><td>${c.totalQty.toFixed(1)}</td><td style="text-align:right;font-weight:600;color:var(--success);">${formatMoney(c.totalAmount)}</td></tr>`).join('');
 }
 
-// ---- 历史记录页 ----
 async function refreshHistory() {
     const filters = {
-        projectName: document.getElementById('filter-project').value || currentProject,
-        startDate: document.getElementById('filter-start').value,
-        endDate: document.getElementById('filter-end').value,
-        workerName: document.getElementById('filter-worker').value,
-        workContent: document.getElementById('filter-content').value
+        projectName: document.getElementById('filter-project').value,
+        startDate: document.getElementById('stat-start').value,
+        endDate: document.getElementById('stat-end').value,
+        workerName: document.getElementById('filter-worker').value
     };
     Object.keys(filters).forEach(k => { if (!filters[k]) delete filters[k]; });
 
@@ -140,170 +305,34 @@ async function refreshHistory() {
   `).join('');
 }
 
-async function loadFilterWorkers() {
-    const workers = await db.getAllWorkers();
-    const select = document.getElementById('filter-worker');
-    const current = select.value;
-    select.innerHTML = '<option value="">全部工人</option>' +
-        workers.map(w => `<option value="${w.name}">${w.name}</option>`).join('');
-    select.value = current;
-}
-
-// ---- 记账弹窗 ----
-
-// 当记账弹窗中选择项目后，加载该项目的工作内容下拉
-async function onRecordProjectChange() {
-    const projectName = document.getElementById('record-project').value;
-    const contentSelect = document.getElementById('record-content');
-    const priceInput = document.getElementById('record-price');
-
-    if (!projectName) {
-        contentSelect.innerHTML = '<option value="">请先选择项目</option>';
-        priceInput.value = '';
-        calcTotal();
-        return;
-    }
-
-    const items = await db.getWorkItemsByProject(projectName);
-    currentWorkItems = items;
-
-    if (items.length === 0) {
-        contentSelect.innerHTML = '<option value="">该项目暂无工作内容</option>';
-    } else {
-        contentSelect.innerHTML = '<option value="">请选择工作内容</option>' +
-            items.map(i => `<option value="${i.contentName}" data-price="${i.unitPrice}">${i.contentName}（¥${i.unitPrice.toFixed(2)}）</option>`).join('');
-    }
-    priceInput.value = '';
-    calcTotal();
-}
-
-// 选择工作内容后自动填入单价
-function onRecordContentChange() {
-    const contentSelect = document.getElementById('record-content');
-    const priceInput = document.getElementById('record-price');
-    const selected = contentSelect.options[contentSelect.selectedIndex];
-
-    if (selected && selected.dataset.price) {
-        priceInput.value = selected.dataset.price;
-        calcTotal();
-    }
-}
-
-function openAddModal() {
-    document.getElementById('modal-title').textContent = '新增记账';
-    document.getElementById('record-form').reset();
-    document.getElementById('record-date').value = today();
-    document.getElementById('record-id').value = '';
-    document.getElementById('calc-total').textContent = '¥0.00';
-    document.getElementById('record-content').innerHTML = '<option value="">请先选择项目</option>';
-
-    loadModalWorkers();
-    loadProjectSelectors();
-
-    // 自动设置当前项目并加载工作内容
-    setTimeout(async () => {
-        const sel = document.getElementById('record-project');
-        if (sel && currentProject) {
-            sel.value = currentProject;
-            await onRecordProjectChange();
-        }
-    }, 50);
-
-    document.getElementById('record-modal').classList.add('show');
-}
-
+// 编辑记录（复用快速记账弹窗）
 async function openEditModal(id) {
     const records = await db.getAllRecords();
-    const record = records.find(r => r.id === id);
-    if (!record) return;
+    const r = records.find(rec => rec.id === id);
+    if (!r) return;
 
     document.getElementById('modal-title').textContent = '编辑记录';
-    document.getElementById('record-id').value = record.id;
-    document.getElementById('record-date').value = record.date;
-    document.getElementById('record-qty').value = record.quantity;
-    document.getElementById('record-price').value = record.unitPrice;
-    document.getElementById('calc-total').textContent = formatMoney(record.totalPrice);
+    document.getElementById('record-id').value = r.id;
+    document.getElementById('record-project').value = r.projectName;
+    document.getElementById('record-content').value = r.workContent;
+    document.getElementById('record-price-hidden').value = r.unitPrice;
+    document.getElementById('record-date').value = r.date;
+    document.getElementById('record-qty').value = r.quantity;
 
-    await loadModalWorkers();
-    await loadProjectSelectors();
+    document.getElementById('work-label').textContent = r.workContent;
+    document.getElementById('work-price').textContent = `¥${r.unitPrice.toFixed(2)}/件`;
+    document.getElementById('calc-total').textContent = formatMoney(r.totalPrice);
 
-    document.getElementById('record-project').value = record.projectName || '';
-    document.getElementById('record-worker').value = record.workerName;
-
-    // 加载该项目的工作内容，然后选中
-    await onRecordProjectChange();
-    document.getElementById('record-content').value = record.workContent;
-    // 恢复单价（可能已被 onRecordProjectChange 清掉）
-    document.getElementById('record-price').value = record.unitPrice;
-    calcTotal();
+    const workers = await db.getAllWorkers();
+    document.getElementById('worker-buttons').innerHTML = workers.map(w =>
+        `<button type="button" class="worker-btn ${w.name === r.workerName ? 'active' : ''}"
+      onclick="selectWorker(this, '${w.name}')">${w.name}</button>`
+    ).join('');
 
     document.getElementById('record-modal').classList.add('show');
 }
 
-function closeModal() {
-    document.getElementById('record-modal').classList.remove('show');
-}
-
-async function loadModalWorkers() {
-    const workers = await db.getAllWorkers();
-    const select = document.getElementById('record-worker');
-    select.innerHTML = '<option value="">请选择工人</option>' +
-        workers.map(w => `<option value="${w.name}">${w.name}</option>`).join('');
-}
-
-function calcTotal() {
-    const qty = parseFloat(document.getElementById('record-qty').value) || 0;
-    const price = parseFloat(document.getElementById('record-price').value) || 0;
-    document.getElementById('calc-total').textContent = formatMoney(qty * price);
-}
-
-async function saveRecord() {
-    if (isSaving) return;
-
-    const id = document.getElementById('record-id').value;
-    const projectName = document.getElementById('record-project').value;
-    const date = document.getElementById('record-date').value;
-    const workerName = document.getElementById('record-worker').value;
-    const workContent = document.getElementById('record-content').value;
-    const quantity = document.getElementById('record-qty').value;
-    const unitPrice = document.getElementById('record-price').value;
-
-    if (!projectName) { showToast('请选择项目'); return; }
-    if (!date) { showToast('请选择日期'); return; }
-    if (!workerName) { showToast('请选择工人'); return; }
-    if (!workContent) { showToast('请选择工作内容'); return; }
-    if (!quantity || parseFloat(quantity) <= 0) { showToast('请输入有效数量'); return; }
-    if (!unitPrice || parseFloat(unitPrice) <= 0) { showToast('请输入有效单价'); return; }
-
-    isSaving = true;
-    document.getElementById('save-btn').disabled = true;
-
-    try {
-        const data = { projectName, date, workerName, workContent, quantity, unitPrice };
-
-        if (id) {
-            const records = await db.getAllRecords();
-            const existing = records.find(r => r.id === parseInt(id));
-            await db.updateRecord({ ...existing, ...data });
-            showToast('记录已更新');
-        } else {
-            await db.addRecord(data);
-            showToast('记录已保存');
-        }
-
-        closeModal();
-        refreshStats();
-        refreshHistory();
-    } catch (err) {
-        showToast('保存失败: ' + err.message);
-    } finally {
-        isSaving = false;
-        document.getElementById('save-btn').disabled = false;
-    }
-}
-
-// ---- 删除记录确认 ----
-
+// ---- 删除记录 ----
 function confirmDeleteRecord(id) {
     pendingDeleteId = id;
     document.getElementById('confirm-msg').textContent = '确定要删除这条记录吗？';
@@ -315,9 +344,10 @@ async function executeDelete() {
     if (pendingDeleteId !== null) {
         await db.deleteRecord(pendingDeleteId);
         pendingDeleteId = null;
-        showToast('记录已删除');
+        showToast('已删除');
         refreshHistory();
         refreshStats();
+        refreshRecordPage();
     }
     closeConfirm();
 }
@@ -327,31 +357,27 @@ function closeConfirm() {
     pendingDeleteId = null;
 }
 
+// ========================================
+//  管理页
+// ========================================
+
 // ---- 项目管理 ----
 async function refreshProjects() {
     const projects = await db.getAllProjects();
     const list = document.getElementById('project-list');
-
     if (projects.length === 0) {
-        list.innerHTML = '<div class="stat-empty">暂无项目，请先添加</div>';
+        list.innerHTML = '<div class="stat-empty">暂无项目</div>';
         return;
     }
-
     list.innerHTML = '';
     for (const p of projects) {
         const hasRecords = await db.projectHasRecords(p.name);
         list.innerHTML += `
-      <div class="worker-item">
-        <span class="worker-name">${p.name}</span>
-        ${hasRecords ? '<span style="font-size:12px;color:var(--text-secondary)">有记录</span>' :
-                `<button class="worker-delete" onclick="deleteProject(${p.id}, '${p.name}')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-            </svg>
-          </button>`
-            }
-      </div>
-    `;
+      <div class="manage-item">
+        <span class="manage-item-name">${p.name}</span>
+        ${hasRecords ? '<span class="manage-item-sub">有记录</span>' :
+                `<button class="manage-item-delete" onclick="deleteProject(${p.id}, '${p.name}')">🗑️</button>`}
+      </div>`;
     }
 }
 
@@ -359,101 +385,97 @@ async function addProject() {
     const input = document.getElementById('new-project-name');
     const name = input.value.trim();
     if (!name) { showToast('请输入项目名称'); return; }
-
     try {
         await db.addProject(name);
         input.value = '';
-        showToast('项目已添加');
+        showToast('项目已添加 ✅');
         refreshProjects();
-        loadProjectSelectors();
+        loadWiProjectSelect();
     } catch (err) {
         if (err.name === 'ConstraintError') showToast('该项目已存在');
-        else showToast('添加失败: ' + err.message);
+        else showToast('添加失败');
     }
 }
 
 async function deleteProject(id, name) {
     const hasRecords = await db.projectHasRecords(name);
     if (hasRecords) { showToast('该项目有记录，无法删除'); return; }
-
-    document.getElementById('confirm-msg').textContent = `确定要删除项目"${name}"吗？`;
+    document.getElementById('confirm-msg').textContent = `确定删除项目"${name}"？`;
     document.getElementById('confirm-overlay').classList.add('show');
     document.getElementById('confirm-yes').onclick = async () => {
         await db.deleteProject(id);
-        showToast('项目已删除');
+        showToast('已删除');
         refreshProjects();
-        loadProjectSelectors();
+        loadWiProjectSelect();
         closeConfirm();
         document.getElementById('confirm-yes').onclick = executeDelete;
     };
 }
 
 // ---- 工作内容管理 ----
+async function loadWiProjectSelect() {
+    const projects = await db.getAllProjects();
+    const sel = document.getElementById('wi-project');
+    const v = sel.value;
+    sel.innerHTML = '<option value="">请选择项目</option>' +
+        projects.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
+    sel.value = v;
+}
 
-// 设置页：项目选择后加载工作内容列表
 async function onWiProjectChange() {
-    const projectName = document.getElementById('wi-project').value;
-    if (!projectName) {
+    const pn = document.getElementById('wi-project').value;
+    if (!pn) {
         document.getElementById('wi-list').innerHTML = '<div class="stat-empty">请先选择项目</div>';
         return;
     }
-    await refreshWorkItems(projectName);
+    await refreshWorkItems(pn);
 }
 
 async function refreshWorkItems(projectName) {
     if (!projectName) projectName = document.getElementById('wi-project').value;
     if (!projectName) return;
-
     const items = await db.getWorkItemsByProject(projectName);
     const list = document.getElementById('wi-list');
-
     if (items.length === 0) {
         list.innerHTML = '<div class="stat-empty">暂无工作内容</div>';
         return;
     }
-
     list.innerHTML = items.map(i => `
-    <div class="worker-item">
+    <div class="manage-item">
       <div>
-        <span class="worker-name">${i.contentName}</span>
-        <span style="font-size:13px;color:var(--success);margin-left:8px;">¥${i.unitPrice.toFixed(2)}</span>
+        <span class="manage-item-name">${i.contentName}</span>
+        <span style="font-size:16px;color:var(--success);margin-left:8px;">¥${i.unitPrice.toFixed(2)}</span>
       </div>
-      <button class="worker-delete" onclick="deleteWorkItem(${i.id})">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-        </svg>
-      </button>
+      <button class="manage-item-delete" onclick="deleteWorkItem(${i.id})">🗑️</button>
     </div>
   `).join('');
 }
 
 async function addWorkItem() {
-    const projectName = document.getElementById('wi-project').value;
-    const contentName = document.getElementById('wi-content-name').value.trim();
-    const unitPrice = document.getElementById('wi-unit-price').value;
-
-    if (!projectName) { showToast('请先选择项目'); return; }
-    if (!contentName) { showToast('请输入工作内容名称'); return; }
-    if (!unitPrice || parseFloat(unitPrice) <= 0) { showToast('请输入有效单价'); return; }
-
+    const pn = document.getElementById('wi-project').value;
+    const cn = document.getElementById('wi-content-name').value.trim();
+    const up = document.getElementById('wi-unit-price').value;
+    if (!pn) { showToast('请先选择项目'); return; }
+    if (!cn) { showToast('请输入工作内容名称'); return; }
+    if (!up || parseFloat(up) <= 0) { showToast('请输入有效单价'); return; }
     try {
-        await db.addWorkItem(projectName, contentName, unitPrice);
+        await db.addWorkItem(pn, cn, up);
         document.getElementById('wi-content-name').value = '';
         document.getElementById('wi-unit-price').value = '';
-        showToast('工作内容已添加');
-        refreshWorkItems(projectName);
+        showToast('已添加 ✅');
+        refreshWorkItems(pn);
     } catch (err) {
         if (err.name === 'ConstraintError') showToast('该工作内容已存在');
-        else showToast('添加失败: ' + err.message);
+        else showToast('添加失败');
     }
 }
 
 async function deleteWorkItem(id) {
-    document.getElementById('confirm-msg').textContent = '确定要删除这个工作内容吗？';
+    document.getElementById('confirm-msg').textContent = '确定删除这个工作内容？';
     document.getElementById('confirm-overlay').classList.add('show');
     document.getElementById('confirm-yes').onclick = async () => {
         await db.deleteWorkItem(id);
-        showToast('工作内容已删除');
+        showToast('已删除');
         refreshWorkItems();
         closeConfirm();
         document.getElementById('confirm-yes').onclick = executeDelete;
@@ -464,27 +486,19 @@ async function deleteWorkItem(id) {
 async function refreshWorkers() {
     const workers = await db.getAllWorkers();
     const list = document.getElementById('worker-list');
-
     if (workers.length === 0) {
-        list.innerHTML = '<div class="stat-empty">暂无工人，请先添加</div>';
+        list.innerHTML = '<div class="stat-empty">暂无工人</div>';
         return;
     }
-
     list.innerHTML = '';
     for (const w of workers) {
         const hasRecords = await db.workerHasRecords(w.name);
         list.innerHTML += `
-      <div class="worker-item">
-        <span class="worker-name">${w.name}</span>
-        ${hasRecords ? '<span style="font-size:12px;color:var(--text-secondary)">有记录</span>' :
-                `<button class="worker-delete" onclick="deleteWorker(${w.id}, '${w.name}')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-            </svg>
-          </button>`
-            }
-      </div>
-    `;
+      <div class="manage-item">
+        <span class="manage-item-name">${w.name}</span>
+        ${hasRecords ? '<span class="manage-item-sub">有记录</span>' :
+                `<button class="manage-item-delete" onclick="deleteWorker(${w.id}, '${w.name}')">🗑️</button>`}
+      </div>`;
     }
 }
 
@@ -492,30 +506,26 @@ async function addWorker() {
     const input = document.getElementById('new-worker-name');
     const name = input.value.trim();
     if (!name) { showToast('请输入工人姓名'); return; }
-
     try {
         await db.addWorker(name);
         input.value = '';
-        showToast('工人已添加');
+        showToast('工人已添加 ✅');
         refreshWorkers();
-        loadFilterWorkers();
     } catch (err) {
         if (err.name === 'ConstraintError') showToast('该工人已存在');
-        else showToast('添加失败: ' + err.message);
+        else showToast('添加失败');
     }
 }
 
 async function deleteWorker(id, name) {
     const hasRecords = await db.workerHasRecords(name);
     if (hasRecords) { showToast('该工人有记录，无法删除'); return; }
-
-    document.getElementById('confirm-msg').textContent = `确定要删除工人"${name}"吗？`;
+    document.getElementById('confirm-msg').textContent = `确定删除工人"${name}"？`;
     document.getElementById('confirm-overlay').classList.add('show');
     document.getElementById('confirm-yes').onclick = async () => {
         await db.deleteWorker(id);
-        showToast('工人已删除');
+        showToast('已删除');
         refreshWorkers();
-        loadFilterWorkers();
         closeConfirm();
         document.getElementById('confirm-yes').onclick = executeDelete;
     };
@@ -524,25 +534,21 @@ async function deleteWorker(id, name) {
 // 数据导出
 async function exportData() {
     const records = await db.getAllRecords();
-    if (records.length === 0) { showToast('暂无数据可导出'); return; }
-    const filters = {};
-    if (currentProject) filters.projectName = currentProject;
-    await db.exportCSV(filters);
-    showToast('CSV 文件已下载');
+    if (records.length === 0) { showToast('暂无数据'); return; }
+    await db.exportCSV({});
+    showToast('CSV 已下载 ✅');
 }
 
-// ---- App 初始化 ----
+// ========================================
+//  初始化
+// ========================================
 async function initApp() {
     await db.open();
 
     document.getElementById('stat-start').value = monthStart();
     document.getElementById('stat-end').value = today();
-    document.getElementById('filter-start').value = monthStart();
-    document.getElementById('filter-end').value = today();
 
-    await loadProjectSelectors();
-    await refreshStats();
-    await loadFilterWorkers();
+    await refreshRecordPage();
 
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('./sw.js').catch(() => { });
