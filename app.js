@@ -38,15 +38,19 @@ function switchTab(tabName) {
 // ========================================
 
 async function refreshRecordPage() {
-    const projects = await db.getAllProjects();
+    const projects = (await db.getAllProjects()).reverse(); // 新项目排前面
     const bar = document.getElementById('project-bar');
     const emptyHint = document.getElementById('empty-hint');
     const workCards = document.getElementById('work-cards');
 
-    // 渲染项目切换栏
-    bar.innerHTML = '<button class="project-chip ' + (!currentProject ? 'active' : '') +
-        '" data-project="" onclick="selectProject(this)">全部</button>' +
-        projects.map(p => `<button class="project-chip ${currentProject === p.name ? 'active' : ''}"
+    // 如果没有选中的项目且有项目存在，自动选第一个
+    if (!currentProject && projects.length > 0) {
+        currentProject = projects[0].name;
+        localStorage.setItem('lastProject', currentProject);
+    }
+
+    // 渲染项目切换栏（不含"全部"）
+    bar.innerHTML = projects.map(p => `<button class="project-chip ${currentProject === p.name ? 'active' : ''}"
       data-project="${p.name}" onclick="selectProject(this)">${p.name}</button>`).join('');
 
     // 加载工作内容

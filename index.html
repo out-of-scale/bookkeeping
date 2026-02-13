@@ -48,19 +48,22 @@
 
     <!-- ========== Tab 2: 统计 ========== -->
     <div id="tab-stats" class="tab-content">
-      <!-- 日期范围 -->
-      <div class="card">
-        <div class="date-range">
-          <label>从</label>
-          <input type="date" id="stat-start" onchange="refreshStats()">
-          <label>至</label>
-          <input type="date" id="stat-end" onchange="refreshStats()">
+      <!-- 筛选 -->
+      <div class="card" style="padding:14px;">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+          <input type="date" id="stat-start" onchange="refreshStats();refreshHistory();"
+            style="flex:1;background:var(--bg-input);border:1px solid rgba(124,77,255,0.15);border-radius:8px;color:var(--text-primary);padding:10px;font-size:15px;">
+          <span style="color:var(--text-secondary);font-size:14px;">至</span>
+          <input type="date" id="stat-end" onchange="refreshStats();refreshHistory();"
+            style="flex:1;background:var(--bg-input);border:1px solid rgba(124,77,255,0.15);border-radius:8px;color:var(--text-primary);padding:10px;font-size:15px;">
         </div>
-        <div class="filter-bar" style="margin-bottom:0;">
-          <select id="filter-project" onchange="refreshStats();refreshHistory();">
+        <div style="display:flex;gap:8px;">
+          <select id="filter-project" onchange="refreshStats();refreshHistory();"
+            style="flex:1;background:var(--bg-input);border:1px solid rgba(124,77,255,0.15);border-radius:8px;color:var(--text-primary);padding:10px;font-size:15px;-webkit-appearance:none;appearance:none;">
             <option value="">全部项目</option>
           </select>
-          <select id="filter-worker" onchange="refreshHistory()">
+          <select id="filter-worker" onchange="refreshStats();refreshHistory();"
+            style="flex:1;background:var(--bg-input);border:1px solid rgba(124,77,255,0.15);border-radius:8px;color:var(--text-primary);padding:10px;font-size:15px;-webkit-appearance:none;appearance:none;">
             <option value="">全部工人</option>
           </select>
         </div>
